@@ -1,66 +1,97 @@
 # Games Played
 
-App web para registrar los juegos que juegas: horas, plataforma y review breve.
-Búsqueda de juegos y reseñas vía RAWG. Autenticación con Google / Discord.
+Web app para registrar los juegos que juegas (horas, plataforma, review) y
+buscar juegos/reseñas vía RAWG. Pensado para reusar la infra del VPS existente
+(scmining): mismo Postgres, mismo Nginx con Let's Encrypt, mismo cron de las 3am.
 
 ## Stack
 
-- Next.js 14 (App Router) + TypeScript + Tailwind
-- PostgreSQL + Prisma
-- NextAuth (Google + Discord, sesión en DB)
-- RAWG API para metadata y reseñas
-- Docker Compose + Nginx para deploy en VPS
+- **Backend**: FastAPI + SQLAlchemy + Alembic (puerto **8002**, solo `127.0.0.1`)
+- **DB**: PostgreSQL **`games_db`** (separada de `scmining_db`, mismo cluster)
+- **Auth**: JWT V2 (Access 15m + Refresh 30/90d) en cookies httpOnly + OAuth Google/Discord
+- **Frontend**: Next.js 14 (App Router) + Tailwind, standalone, puerto **3002**
+- **Reverse proxy**: Nginx + certbot
+- **Backups**: `/opt/games-played/backups/` diarios a las **3:10am** (10 min después de scmining)
+- **Monitor**: `/api/health` para Uptime Kuma
+
+## Layout en VPS
+
+```
+/opt/games-played/
+  backend/        FastAPI (.venv, app/, alembic/)
+  frontend/       Next.js (.next/standalone)
+  deploy/         systemd, nginx, backup.sh, cron
+  backups/        dumps gzip de games_db
+```
+
+## Despliegue rápido
+
+```bash
+# en el VPS, como root
+git clone <repo> /opt/games-played
+cd /opt/games-played
+DOMAIN=games.tudominio.com bash deploy/install.sh
+```
+
+El script:
+1. Instala Python 3.11, Node 20, nginx, postgres-client.
+2. Crea usuario `games`, DB `games_db` y rol `games`.
+3. Crea venv backend e instala dependencias.
+4. Builda el frontend.
+5. Instala unidades systemd `games-played-api` y `games-played-web`.
+6. Instala el site nginx y el cron de backup.
+
+Después rellenas `.env` y lanzas:
+- `certbot --nginx -d games.tudominio.com`
+- `sudo -u games bash -c 'cd /opt/games-played/backend && .venv/bin/alembic revision --autogenerate -m init && .venv/bin/alembic upgrade head'`
+- Añadir `https://games.tudominio.com/api/health` a Uptime Kuma.
 
 ## Desarrollo local
 
 ```bash
-cp .env.example .env
-# Rellena DATABASE_URL, NEXTAUTH_SECRET (openssl rand -base64 32),
-# GOOGLE_*, DISCORD_*, RAWG_API_KEY
+# Backend
+cd backend
+python3.11 -m venv .venv && . .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env   # rellena DATABASE_URL, JWT_SECRET, OAuth, RAWG
+alembic revision --autogenerate -m "init"
+alembic upgrade head
+uvicorn app.main:app --reload --port 8002
 
+# Frontend
+cd ../frontend
+cp .env.example .env.local   # NEXT_PUBLIC_API_URL=http://localhost:8002
 npm install
-npx prisma db push
-npm run dev
+npm run dev   # http://localhost:3002
 ```
 
-Abre http://localhost:3000.
+## OAuth callbacks
 
-## OAuth
+Configura en cada provider la URL `https://games.tudominio.com/api/auth/callback/{provider}`:
+- Google Cloud Console → OAuth client (Web)
+- Discord Developer Portal → OAuth2 Redirects
 
-- **Google**: https://console.cloud.google.com → OAuth client → Web app
-  - Redirect URI: `http://localhost:3000/api/auth/callback/google` (y la versión prod)
-- **Discord**: https://discord.com/developers/applications
-  - Redirect URI: `http://localhost:3000/api/auth/callback/discord`
+## Endpoints
 
-## RAWG
+- `GET  /api/health`
+- `GET  /api/auth/login/{google|discord}` → redirect OAuth
+- `GET  /api/auth/callback/{google|discord}` → setea cookies y redirige a `/library`
+- `POST /api/auth/refresh` (rota refresh token)
+- `POST /api/auth/logout`
+- `GET  /api/auth/me`
+- `GET|POST /api/entries`
+- `PATCH|DELETE /api/entries/{id}`
+- `GET  /api/rawg/search?q=...`
+- `GET  /api/rawg/games/{id_or_slug}`
 
-Pide una API key gratuita en https://rawg.io/apidocs y ponla en `RAWG_API_KEY`.
+## Backup
 
-## Deploy en VPS (Docker + Nginx)
+`deploy/backup.sh` hace `pg_dump games_db | gzip` en `/opt/games-played/backups/`,
+con retención `RETENTION_DAYS` (14 por defecto). El cron está en
+`deploy/cron.games-played` y corre a las **3:10am**.
 
-```bash
-# en el VPS
-git clone <repo> games-played && cd games-played
-cp .env.example .env   # rellena valores reales (NEXTAUTH_URL=https://tudominio)
-docker compose up -d --build
-```
+## Próximo: app móvil
 
-Nginx del compose escucha en `HTTP_PORT` (8080 por defecto). En tu VPS, configura
-el reverse proxy frontal (el Nginx/Caddy ya existente con TLS) para reenviar
-`tudominio` → `127.0.0.1:8080`.
-
-Migraciones: el contenedor `app` ejecuta `prisma migrate deploy` (o `db push` si
-no hay migraciones) al arrancar.
-
-## Modelo
-
-- `User` (NextAuth)
-- `Game`: catálogo cacheado desde RAWG (`rawgId`, `title`, `cover`, ...)
-- `GameEntry`: registro del usuario para un juego
-  (`platform`, `hours`, `rating`, `review`, `status`, `startedAt`, `finishedAt`)
-
-## Próximos pasos
-
-- Migrar a app móvil con React Native / Expo reusando la API
-- Página detalle de juego con reseñas RAWG agregadas
-- Filtros por estado/plataforma y estadísticas (horas totales, top géneros)
+La API es la misma. Una app Expo/React Native consumiría los mismos endpoints.
+Para auth en móvil, usar el access token en `Authorization: Bearer ...` y un
+endpoint extra que emita el par sin cookies (pendiente).

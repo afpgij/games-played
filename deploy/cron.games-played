@@ -1,0 +1,5 @@
+# /etc/cron.d/games-played
+# Backup diario a las 3:10 (10 min despues del de scmining para no solapar).
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+10 3 * * * root /opt/games-played/deploy/backup.sh >> /var/log/games-played-backup.log 2>&1
