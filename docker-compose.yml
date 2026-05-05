@@ -1,0 +1,44 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-games}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-games}
+      POSTGRES_DB: ${POSTGRES_DB:-games}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    networks: [internal]
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on: [db]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-games}:${POSTGRES_PASSWORD:-games}@db:5432/${POSTGRES_DB:-games}?schema=public
+      NEXTAUTH_URL: ${NEXTAUTH_URL}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID}
+      DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET}
+      RAWG_API_KEY: ${RAWG_API_KEY}
+    command: sh -c "npx prisma migrate deploy || npx prisma db push && node server.js"
+    networks: [internal, web]
+
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    depends_on: [app]
+    ports:
+      - "${HTTP_PORT:-8080}:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks: [web]
+
+volumes:
+  db_data:
+
+networks:
+  internal:
+  web:
