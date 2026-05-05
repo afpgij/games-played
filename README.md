@@ -30,7 +30,7 @@ buscar juegos/reseñas vía RAWG. Pensado para reusar la infra del VPS existente
 # en el VPS, como root
 git clone <repo> /opt/games-played
 cd /opt/games-played
-DOMAIN=games.tudominio.com bash deploy/install.sh
+DOMAIN=games-played.duckdns.org bash deploy/install.sh
 ```
 
 El script:
@@ -42,9 +42,9 @@ El script:
 6. Instala el site nginx y el cron de backup.
 
 Después rellenas `.env` y lanzas:
-- `certbot --nginx -d games.tudominio.com`
+- `certbot --nginx -d games-played.duckdns.org`
 - `sudo -u games bash -c 'cd /opt/games-played/backend && .venv/bin/alembic revision --autogenerate -m init && .venv/bin/alembic upgrade head'`
-- Añadir `https://games.tudominio.com/api/health` a Uptime Kuma.
+- Añadir `https://games-played.duckdns.org/api/health` a Uptime Kuma.
 
 ## Desarrollo local
 
@@ -67,7 +67,7 @@ npm run dev   # http://localhost:3002
 
 ## OAuth callbacks
 
-Configura en cada provider la URL `https://games.tudominio.com/api/auth/callback/{provider}`:
+Configura en cada provider la URL `https://games-played.duckdns.org/api/auth/callback/{provider}`:
 - Google Cloud Console → OAuth client (Web)
 - Discord Developer Portal → OAuth2 Redirects
 

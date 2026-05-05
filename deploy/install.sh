@@ -3,7 +3,7 @@
 set -euo pipefail
 
 APP_DIR=/opt/games-played
-DOMAIN="${DOMAIN:-games.tudominio.com}"
+DOMAIN="${DOMAIN:-games-played.duckdns.org}"
 DB_NAME="${DB_NAME:-games_db}"
 DB_USER="${DB_USER:-games}"
 DB_PASS="${DB_PASS:-$(openssl rand -hex 16)}"
